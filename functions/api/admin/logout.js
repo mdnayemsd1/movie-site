@@ -1,4 +1,4 @@
-import { json, cookieHeader } from "../../_lib/auth.js";
+import { cookieHeader } from "../../_lib/auth.js";
 
 export async function onRequestPost() {
   return new Response(
