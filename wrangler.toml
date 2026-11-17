@@ -5,5 +5,5 @@ pages_build_output_dir = "."
 [[d1_databases]]
 binding = "DB"
 database_name = "nebula-videos"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "15842a86-341b-4e48-9d60-1bf5d85273c2"
 migrations_dir = "migrations"
