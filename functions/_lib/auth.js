@@ -1,108 +1,27 @@
-const encoder = new TextEncoder();
+import { json, createSession, cookieHeader } from "../../_lib/auth.js";
 
-function toBase64Url(bytes) {
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-
-  return btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
-
-function fromBase64Url(value) {
-  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = base64 + "=".repeat((4 - base64.length % 4) % 4);
-
-  return Uint8Array.from(atob(padded), c => c.charCodeAt(0));
-}
-
-async function getKey(secret) {
-  return crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign", "verify"]
-  );
-}
-
-export function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8"
-    }
-  });
-}
-
-export async function createSession(env) {
-  if (!env.ADMIN_SECRET) {
-    throw new Error("ADMIN_SECRET is missing");
-  }
-
-  const payload = {
-    admin: true,
-    exp: Date.now() + 7 * 24 * 60 * 60 * 1000
-  };
-
-  const encoded = toBase64Url(
-    encoder.encode(JSON.stringify(payload))
-  );
-
-  const key = await getKey(env.ADMIN_SECRET);
-
-  const signature = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    encoder.encode(encoded)
-  );
-
-  return encoded + "." + toBase64Url(new Uint8Array(signature));
-}
-
-export async function verifySession(token, env) {
+export async function onRequestPost({ request, env }) {
   try {
-    if (!token || !env.ADMIN_SECRET) return false;
+    const body = await request.json();
+    const password = String(body.password || "");
 
-    const parts = token.split(".");
-    if (parts.length !== 2) return false;
+    if (!env.ADMIN_PASSWORD || password !== env.ADMIN_PASSWORD) {
+      return json({ error: "ভুল পাসওয়ার্ড" }, 401);
+    }
 
-    const key = await getKey(env.ADMIN_SECRET);
+    const token = await createSession(env);
 
-    const valid = await crypto.subtle.verify(
-      "HMAC",
-      key,
-      fromBase64Url(parts[1]),
-      encoder.encode(parts[0])
+    return new Response(
+      JSON.stringify({ success: true }),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Set-Cookie": cookieHeader(token)
+        }
+      }
     );
-
-    if (!valid) return false;
-
-    const payload = JSON.parse(
-      new TextDecoder().decode(fromBase64Url(parts[0]))
-    );
-
-    return payload.admin === true && payload.exp > Date.now();
   } catch {
-    return false;
+    return json({ error: "লগইন করা যায়নি" }, 500);
   }
 }
-
-export function cookieHeader(token, maxAge = 604800) {
-  return `nebula_admin=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${maxAge}`;
-}
-
-export async function requireAdmin(request, env) {
-  const cookie = request.headers.get("Cookie") || "";
-
-  const match = cookie.match(
-    /(?:^|;\s*)nebula_admin=([^;]+)/
-  );
-
-  if (!match) return false;
-
-  return await verifySession(match[1], env);
-    }
